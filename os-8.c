@@ -1,152 +1,78 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
  
-#define P 5 
-#define R 3   
+#define N 5          /* number of philosophers / forks */
+#define MEALS 3      /* number of times each philosopher eats */
  
-int allocation[P][R];
-int max[P][R];
-int need[P][R];
-int available[R];
+sem_t forks[N];      /* one semaphore (binary) per fork      */
+sem_t room;          /* allows at most N-1 philosophers to sit,
+                        preventing circular-wait deadlock       */
  
-void calculate_need()
+void think(int id)
 {
-    int i, j;
-    for (i = 0; i < P; i++)
-        for (j = 0; j < R; j++)
-            need[i][j] = max[i][j] - allocation[i][j];
+    printf("Philosopher %d is thinking.\n", id);
+    usleep(100000);
 }
  
-
-int is_safe(int safe_seq[])
+void eat(int id)
 {
-    int work[R];
-    int finish[P] = {0};
-    int i, j, count = 0;
- 
-    for (i = 0; i < R; i++)
-        work[i] = available[i];
- 
-    while (count < P) {
-        int found = 0;
-        for (i = 0; i < P; i++) {
-            if (!finish[i]) {
-                int can_allocate = 1;
-                for (j = 0; j < R; j++) {
-                    if (need[i][j] > work[j]) {
-                        can_allocate = 0;
-                        break;
-                    }
-                }
-                if (can_allocate) {
-                    for (j = 0; j < R; j++)
-                        work[j] += allocation[i][j];
-                    safe_seq[count++] = i;
-                    finish[i] = 1;
-                    found = 1;
-                }
-            }
-        }
-        if (!found)
-            return 0; 
-    }
-    return 1;
+    printf("Philosopher %d is eating.\n", id);
+    usleep(100000);
 }
  
-int request_resources(int p_id, int request[R])
+void *philosopher(void *arg)
 {
-    int i;
-    int safe_seq[P];
+    int id = *(int *)arg;
+    int left = id;
+    int right = (id + 1) % N;
  
-    for (i = 0; i < R; i++) {
-        if (request[i] > need[p_id][i]) {
-            printf("Error: Process P%d has exceeded its maximum claim.\n", p_id);
-            return 0;
-        }
+    for (int m = 0; m < MEALS; m++) {
+        think(id);
+ 
+        sem_wait(&room);          /* enter the "room" (max N-1 at a time) */
+ 
+        sem_wait(&forks[left]);   /* pick up left fork  */
+        printf("Philosopher %d picked up left fork %d\n", id, left);
+        sem_wait(&forks[right]);  /* pick up right fork */
+        printf("Philosopher %d picked up right fork %d\n", id, right);
+ 
+        eat(id);
+ 
+        sem_post(&forks[right]);  /* put down right fork */
+        sem_post(&forks[left]);   /* put down left fork  */
+        printf("Philosopher %d put down both forks.\n", id);
+ 
+        sem_post(&room);          /* leave the room */
     }
  
-    for (i = 0; i < R; i++) {
-        if (request[i] > available[i]) {
-            printf("Process P%d must wait; resources are not available.\n", p_id);
-            return 0;
-        }
-    }
- 
-    for (i = 0; i < R; i++) {
-        available[i] -= request[i];
-        allocation[p_id][i] += request[i];
-        need[p_id][i] -= request[i];
-    }
- 
-    if (is_safe(safe_seq)) {
-        printf("Request can be granted safely.\nNew safe sequence: ");
-        for (i = 0; i < P; i++)
-            printf("P%d ", safe_seq[i]);
-        printf("\n");
-        return 1;
-    } else {
-        
-        for (i = 0; i < R; i++) {
-            available[i] += request[i];
-            allocation[p_id][i] -= request[i];
-            need[p_id][i] += request[i];
-        }
-        printf("Request denied: granting it would leave the system in an unsafe state.\n");
-        return 0;
-    }
+    return NULL;
 }
  
 int main()
 {
-    int i, j;
+    pthread_t phil[N];
+    int ids[N];
  
-    printf("Enter Allocation matrix (%d processes x %d resources):\n", P, R);
-    for (i = 0; i < P; i++) {
-        printf("P%d: ", i);
-        for (j = 0; j < R; j++)
-            scanf("%d", &allocation[i][j]);
+    for (int i = 0; i < N; i++)
+        sem_init(&forks[i], 0, 1);   /* each fork starts available */
+ 
+    sem_init(&room, 0, N - 1);       /* only N-1 philosophers allowed in */
+ 
+    for (int i = 0; i < N; i++) {
+        ids[i] = i;
+        pthread_create(&phil[i], NULL, philosopher, &ids[i]);
     }
  
-    printf("Enter Maximum matrix (%d processes x %d resources):\n", P, R);
-    for (i = 0; i < P; i++) {
-        printf("P%d: ", i);
-        for (j = 0; j < R; j++)
-            scanf("%d", &max[i][j]);
-    }
+    for (int i = 0; i < N; i++)
+        pthread_join(phil[i], NULL);
  
-    printf("Enter Available resources vector (%d resources):\n", R);
-    for (j = 0; j < R; j++)
-        scanf("%d", &available[j]);
+    for (int i = 0; i < N; i++)
+        sem_destroy(&forks[i]);
+    sem_destroy(&room);
  
-    calculate_need();
- 
-    printf("\nNeed matrix:\n");
-    for (i = 0; i < P; i++) {
-        printf("P%d: ", i);
-        for (j = 0; j < R; j++)
-            printf("%d ", need[i][j]);
-        printf("\n");
-    }
- 
-    int safe_seq[P];
-    if (is_safe(safe_seq)) {
-        printf("\nSystem is in a SAFE state.\nSafe sequence: ");
-        for (i = 0; i < P; i++)
-            printf("P%d ", safe_seq[i]);
-        printf("\n");
-    } else {
-        printf("\nSystem is in an UNSAFE state (deadlock may occur).\n");
-        return 0;
-    }
- 
-    int p_id;
-    int request[R];
-    printf("\nEnter process number requesting resources: ");
-    scanf("%d", &p_id);
-    printf("Enter request vector (%d resources): ", R);
-    for (j = 0; j < R; j++)
-        scanf("%d", &request[j]);
- 
-    request_resources(p_id, request);
- 
+    printf("\nAll philosophers have finished eating. No deadlock occurred.\n");
     return 0;
 }
