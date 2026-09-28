@@ -1,135 +1,124 @@
 #include <stdio.h>
+#include <string.h>
  
-#define MAX 50
+#define MAX 20
  
-int is_present(int frames[], int nf, int page)
+void first_fit(int bsize[], int nb, int psize[], int np)
 {
-    int i;
-    for (i = 0; i < nf; i++)
-        if (frames[i] == page)
-            return 1;
-    return 0;
-}
+    int block[MAX], allocation[MAX];
+    int i, j;
  
-void fifo(int ref[], int n, int nf)
-{
-    int frames[MAX];
-    int i, j, faults = 0, next = 0;
+    for (i = 0; i < nb; i++) block[i] = bsize[i]; /* remaining size of each block */
+    for (i = 0; i < np; i++) allocation[i] = -1;
  
-    for (i = 0; i < nf; i++) frames[i] = -1;
- 
-    printf("\n--- FIFO Page Replacement ---\n");
-    for (i = 0; i < n; i++) {
-        if (!is_present(frames, nf, ref[i])) {
-            frames[next] = ref[i];
-            next = (next + 1) % nf;
-            faults++;
-            printf("Page %d -> Fault  \tFrames: ", ref[i]);
-        } else {
-            printf("Page %d -> Hit    \tFrames: ", ref[i]);
-        }
-        for (j = 0; j < nf; j++)
-            printf("%d ", frames[j]);
-        printf("\n");
-    }
-    printf("Total Page Faults (FIFO) = %d\n", faults);
-}
- 
-void lru(int ref[], int n, int nf)
-{
-    int frames[MAX], last_used[MAX];
-    int i, j, faults = 0;
- 
-    for (i = 0; i < nf; i++) { frames[i] = -1; last_used[i] = -1; }
- 
-    printf("\n--- LRU Page Replacement ---\n");
-    for (i = 0; i < n; i++) {
-        if (!is_present(frames, nf, ref[i])) {
-            /* find a free frame, else the least-recently-used one */
-            int idx = -1;
-            for (j = 0; j < nf; j++)
-                if (frames[j] == -1) { idx = j; break; }
- 
-            if (idx == -1) {
-                int lru_idx = 0;
-                for (j = 1; j < nf; j++)
-                    if (last_used[j] < last_used[lru_idx])
-                        lru_idx = j;
-                idx = lru_idx;
+    for (i = 0; i < np; i++) {
+        for (j = 0; j < nb; j++) {
+            if (block[j] >= psize[i]) {
+                allocation[i] = j;
+                block[j] -= psize[i];
+                break;
             }
-            frames[idx] = ref[i];
-            last_used[idx] = i;
-            faults++;
-            printf("Page %d -> Fault  \tFrames: ", ref[i]);
-        } else {
-            /* update last used time for the frame holding this page */
-            for (j = 0; j < nf; j++)
-                if (frames[j] == ref[i]) last_used[j] = i;
-            printf("Page %d -> Hit    \tFrames: ", ref[i]);
         }
-        for (j = 0; j < nf; j++)
-            printf("%d ", frames[j]);
-        printf("\n");
     }
-    printf("Total Page Faults (LRU) = %d\n", faults);
+ 
+    printf("\n--- First Fit ---\n");
+    printf("Process\tSize\tBlock Allocated\n");
+    for (i = 0; i < np; i++) {
+        if (allocation[i] != -1)
+            printf("P%d\t%d\tBlock %d\n", i + 1, psize[i], allocation[i] + 1);
+        else
+            printf("P%d\t%d\tNot Allocated\n", i + 1, psize[i]);
+    }
 }
  
-void optimal(int ref[], int n, int nf)
+void best_fit(int bsize[], int nb, int psize[], int np)
 {
-    int frames[MAX];
-    int i, j, k, faults = 0;
+    int block[MAX], allocation[MAX];
+    int i, j;
  
-    for (i = 0; i < nf; i++) frames[i] = -1;
+    for (i = 0; i < nb; i++) block[i] = bsize[i];
+    for (i = 0; i < np; i++) allocation[i] = -1;
  
-    printf("\n--- Optimal Page Replacement ---\n");
-    for (i = 0; i < n; i++) {
-        if (!is_present(frames, nf, ref[i])) {
-            int idx = -1;
-            for (j = 0; j < nf; j++)
-                if (frames[j] == -1) { idx = j; break; }
- 
-            if (idx == -1) {
-                /* find the page used farthest in the future (or never again) */
-                int farthest = -1, replace_idx = 0;
-                for (j = 0; j < nf; j++) {
-                    int k_use = -1;
-                    for (k = i + 1; k < n; k++) {
-                        if (frames[j] == ref[k]) { k_use = k; break; }
-                    }
-                    if (k_use == -1) { replace_idx = j; break; } /* never used again */
-                    if (k_use > farthest) { farthest = k_use; replace_idx = j; }
-                }
-                idx = replace_idx;
+    for (i = 0; i < np; i++) {
+        int best_idx = -1;
+        for (j = 0; j < nb; j++) {
+            if (block[j] >= psize[i]) {
+                if (best_idx == -1 || block[j] < block[best_idx])
+                    best_idx = j;
             }
-            frames[idx] = ref[i];
-            faults++;
-            printf("Page %d -> Fault  \tFrames: ", ref[i]);
-        } else {
-            printf("Page %d -> Hit    \tFrames: ", ref[i]);
         }
-        for (j = 0; j < nf; j++)
-            printf("%d ", frames[j]);
-        printf("\n");
+        if (best_idx != -1) {
+            allocation[i] = best_idx;
+            block[best_idx] -= psize[i];
+        }
     }
-    printf("Total Page Faults (Optimal) = %d\n", faults);
+ 
+    printf("\n--- Best Fit ---\n");
+    printf("Process\tSize\tBlock Allocated\n");
+    for (i = 0; i < np; i++) {
+        if (allocation[i] != -1)
+            printf("P%d\t%d\tBlock %d\n", i + 1, psize[i], allocation[i] + 1);
+        else
+            printf("P%d\t%d\tNot Allocated\n", i + 1, psize[i]);
+    }
+}
+ 
+void worst_fit(int bsize[], int nb, int psize[], int np)
+{
+    int block[MAX], allocation[MAX];
+    int i, j;
+ 
+    for (i = 0; i < nb; i++) block[i] = bsize[i];
+    for (i = 0; i < np; i++) allocation[i] = -1;
+ 
+    for (i = 0; i < np; i++) {
+        int worst_idx = -1;
+        for (j = 0; j < nb; j++) {
+            if (block[j] >= psize[i]) {
+                if (worst_idx == -1 || block[j] > block[worst_idx])
+                    worst_idx = j;
+            }
+        }
+        if (worst_idx != -1) {
+            allocation[i] = worst_idx;
+            block[worst_idx] -= psize[i];
+        }
+    }
+ 
+    printf("\n--- Worst Fit ---\n");
+    printf("Process\tSize\tBlock Allocated\n");
+    for (i = 0; i < np; i++) {
+        if (allocation[i] != -1)
+            printf("P%d\t%d\tBlock %d\n", i + 1, psize[i], allocation[i] + 1);
+        else
+            printf("P%d\t%d\tNot Allocated\n", i + 1, psize[i]);
+    }
 }
  
 int main()
 {
-    int ref[MAX], n, nf;
+    int nb, np, i;
+    int bsize[MAX], psize[MAX];
  
-    printf("Enter number of pages in reference string: ");
-    scanf("%d", &n);
-    printf("Enter the reference string:\n");
-    for (int i = 0; i < n; i++)
-        scanf("%d", &ref[i]);
+    printf("Enter number of memory blocks: ");
+    scanf("%d", &nb);
+    printf("Enter size of each block:\n");
+    for (i = 0; i < nb; i++) {
+        printf("Block %d: ", i + 1);
+        scanf("%d", &bsize[i]);
+    }
  
-    printf("Enter number of page frames: ");
-    scanf("%d", &nf);
+    printf("Enter number of processes: ");
+    scanf("%d", &np);
+    printf("Enter size of each process:\n");
+    for (i = 0; i < np; i++) {
+        printf("Process %d: ", i + 1);
+        scanf("%d", &psize[i]);
+    }
  
-    fifo(ref, n, nf);
-    lru(ref, n, nf);
-    optimal(ref, n, nf);
+    first_fit(bsize, nb, psize, np);
+    best_fit(bsize, nb, psize, np);
+    worst_fit(bsize, nb, psize, np);
  
     return 0;
 }
